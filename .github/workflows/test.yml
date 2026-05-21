@@ -8,6 +8,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
     steps:
       - name: Check out sources
         uses: actions/checkout@v4
@@ -18,5 +20,5 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Run tests
-        run: ./gradlew test
+      - name: Run tests and local Maven publish
+        run: ./gradlew test publishToMavenLocal
