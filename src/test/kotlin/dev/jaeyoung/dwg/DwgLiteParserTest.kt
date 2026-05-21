@@ -109,6 +109,46 @@ class DwgLiteParserTest {
         assertClose(10.0, polyline.points[3].y)
     }
 
+    @Test
+    fun parsesAcadrustR2000TextFixture() {
+        val result = DwgLiteParser().parse(readFixture("ac1015-text.dwg"))
+
+        assertTrue("Expected Success but was $result", result is DwgLiteParseResult.Success)
+        val document = (result as DwgLiteParseResult.Success).document
+        assertEquals(DwgLiteVersion.AC1015, document.version)
+        assertEquals(1, document.entities.size)
+
+        val text = document.entities.single()
+        assertTrue(text is DwgLiteEntity.Text)
+        text as DwgLiteEntity.Text
+        assertEquals("Hello World", text.value)
+        assertClose(0.0, text.position.x)
+        assertClose(0.0, text.position.y)
+        assertClose(0.0, text.position.z)
+        assertClose(1.0, text.height)
+        assertClose(0.0, text.rotationRadians)
+    }
+
+    @Test
+    fun parsesAcadrustR2000MTextFixture() {
+        val result = DwgLiteParser().parse(readFixture("ac1015-mtext.dwg"))
+
+        assertTrue("Expected Success but was $result", result is DwgLiteParseResult.Success)
+        val document = (result as DwgLiteParseResult.Success).document
+        assertEquals(DwgLiteVersion.AC1015, document.version)
+        assertEquals(1, document.entities.size)
+
+        val text = document.entities.single()
+        assertTrue(text is DwgLiteEntity.Text)
+        text as DwgLiteEntity.Text
+        assertEquals("Multi\\Pline\\PText", text.value)
+        assertClose(0.0, text.position.x)
+        assertClose(0.0, text.position.y)
+        assertClose(0.0, text.position.z)
+        assertClose(1.0, text.height)
+        assertClose(0.0, text.rotationRadians)
+    }
+
     private fun assertClose(expected: Double, actual: Double) {
         assertEquals(expected, actual, 0.000001)
     }

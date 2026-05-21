@@ -3,6 +3,7 @@ package dev.jaeyoung.dwg
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
+import kotlin.math.atan2
 import kotlin.math.min
 
 enum class DwgLiteVersion(val header: String) {
@@ -59,6 +60,14 @@ sealed interface DwgLiteEntity {
     data class Polyline(
         val points: List<DwgLitePoint>,
         val closed: Boolean,
+        override val sourceHandle: Long? = null
+    ) : DwgLiteEntity
+
+    data class Text(
+        val position: DwgLitePoint,
+        val value: String,
+        val height: Double,
+        val rotationRadians: Double,
         override val sourceHandle: Long? = null
     ) : DwgLiteEntity
 }
@@ -128,10 +137,12 @@ class DwgLiteParser(
                         version = version
                     ) ?: return@forEach
                     when (record.typeCode) {
+                        DwgObjectTypeText -> record.readTextEntity(handle)?.let(entities::add)
                         DwgObjectTypeArc -> record.readArcEntity(handle)?.let(entities::add)
                         DwgObjectTypeCircle -> record.readCircleEntity(handle)?.let(entities::add)
                         DwgObjectTypeLine -> record.readLineEntity(handle)?.let(entities::add)
                         DwgObjectTypePoint -> record.readPointEntity(handle)?.let(entities::add)
+                        DwgObjectTypeMText -> record.readMTextEntity(handle)?.let(entities::add)
                         DwgObjectTypeLwPolyline -> record.readLwPolylineEntity(handle)?.let(entities::add)
                         in DwgFixedEntityTypes -> unsupportedEntities += 1
                     }
@@ -160,10 +171,12 @@ class DwgLiteParser(
         private const val DwgVersionHeaderSize = 6
         private const val DefaultMaxBytes = 16 * 1024 * 1024
         private const val DefaultMaxEntities = 20_000
+        private const val DwgObjectTypeText = 1
         private const val DwgObjectTypeArc = 17
         private const val DwgObjectTypeCircle = 18
         private const val DwgObjectTypeLine = 19
         private const val DwgObjectTypePoint = 27
+        private const val DwgObjectTypeMText = 44
         private const val DwgObjectTypeLwPolyline = 77
         private val DwgFixedEntityTypes = setOf(
             1, 2, 3, 4, 5, 6, 7, 8,
@@ -308,6 +321,65 @@ private data class DwgObjectRecord(
     val typeCode: Int,
     private val reader: DwgMergedReader
 ) {
+    fun readTextEntity(sourceHandle: Long): DwgLiteEntity.Text? {
+        return runCatching {
+            reader.readCommonEntityData()
+            val dataFlags = reader.readByte()
+            val elevation = if ((dataFlags and 0x01) == 0) reader.readRawDouble() else 0.0
+            val x = reader.readRawDouble()
+            val y = reader.readRawDouble()
+            if ((dataFlags and 0x02) == 0) {
+                reader.readBitDoubleWithDefault(x)
+                reader.readBitDoubleWithDefault(y)
+            }
+            reader.readBitExtrusion()
+            reader.readBitThickness()
+            if ((dataFlags and 0x04) == 0) reader.readRawDouble()
+            val rotation = if ((dataFlags and 0x08) == 0) reader.readRawDouble() else 0.0
+            val height = reader.readRawDouble()
+            if ((dataFlags and 0x10) == 0) reader.readRawDouble()
+            val value = reader.readVariableText()
+            if ((dataFlags and 0x20) == 0) reader.readBitShort()
+            if ((dataFlags and 0x40) == 0) reader.readBitShort()
+            if ((dataFlags and 0x80) == 0) reader.readBitShort()
+            reader.readHandle()
+            DwgLiteEntity.Text(
+                position = DwgLitePoint(x, y, elevation),
+                value = value,
+                height = height,
+                rotationRadians = rotation,
+                sourceHandle = sourceHandle
+            )
+        }.getOrNull()
+    }
+
+    fun readMTextEntity(sourceHandle: Long): DwgLiteEntity.Text? {
+        return runCatching {
+            reader.readCommonEntityData()
+            val position = reader.read3BitDouble()
+            reader.read3BitDouble()
+            val xDirection = reader.read3BitDouble()
+            reader.readBitDouble()
+            val height = reader.readBitDouble()
+            reader.readBitShort()
+            reader.readBitShort()
+            reader.readBitDouble()
+            reader.readBitDouble()
+            val value = reader.readVariableText()
+            reader.readHandle()
+            reader.readBitShort()
+            reader.readBitDouble()
+            reader.readBit()
+            DwgLiteEntity.Text(
+                position = position,
+                value = value,
+                height = height,
+                rotationRadians = atan2(xDirection.y, xDirection.x),
+                sourceHandle = sourceHandle
+            )
+        }.getOrNull()
+    }
+
     fun readPointEntity(sourceHandle: Long): DwgLiteEntity.Point? {
         return runCatching {
             reader.readCommonEntityData()
@@ -488,6 +560,7 @@ private class DwgMergedReader(
     fun readBitDoubleWithDefault(default: Double): Double = main.readBitDoubleWithDefault(default)
     fun readBitThickness(): Double = main.readBitThickness()
     fun readBitExtrusion(): DwgLitePoint = main.readBitExtrusion()
+    fun readVariableText(): String = main.readVariableText()
 
     fun readHandle(): Long = handle.readHandle(referenceHandle)
 
@@ -682,6 +755,15 @@ private class DwgBitReader(
         return readBytes(8).toLittleEndianDouble()
     }
 
+    fun readVariableText(): String {
+        val length = readBitShort()
+        if (length <= 0) return ""
+        val safeLength = length.coerceAtMost(MaxVariableTextBytes)
+        val bytes = readBytes(safeLength)
+        repeat(length - safeLength) { readByte() }
+        return String(bytes, StandardCharsets.ISO_8859_1).replace("\u0000", "")
+    }
+
     fun readBitThickness(): Double {
         return if (version >= DwgLiteVersion.AC1015) {
             if (readBit()) 0.0 else readBitDouble()
@@ -737,6 +819,10 @@ private class DwgBitReader(
             0
         }
         position += 1
+    }
+
+    private companion object {
+        private const val MaxVariableTextBytes = 1_000_000
     }
 }
 
