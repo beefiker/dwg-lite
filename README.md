@@ -31,6 +31,18 @@ The unit-test fixtures are generated from acadrust's `gen_all_entities_all_versi
 ./gradlew test
 ```
 
+## Local Maven Publish Check
+
+```bash
+./gradlew publishToMavenLocal
+```
+
+The current development artifact is published as:
+
+```text
+dev.jaeyoung:dwg-lite:0.1.0-SNAPSHOT
+```
+
 ## License
 
 MPL-2.0.
