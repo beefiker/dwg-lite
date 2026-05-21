@@ -142,6 +142,9 @@ class DwgLiteParser(
                         DwgObjectTypeCircle -> record.readCircleEntity(handle)?.let(entities::add)
                         DwgObjectTypeLine -> record.readLineEntity(handle)?.let(entities::add)
                         DwgObjectTypePoint -> record.readPointEntity(handle)?.let(entities::add)
+                        DwgObjectType3dFace -> record.readFace3dEntity(handle)?.let(entities::add)
+                        DwgObjectTypeSolid,
+                        DwgObjectTypeTrace -> record.readSolidEntity(handle)?.let(entities::add)
                         DwgObjectTypeMText -> record.readMTextEntity(handle)?.let(entities::add)
                         DwgObjectTypeLwPolyline -> record.readLwPolylineEntity(handle)?.let(entities::add)
                         in DwgFixedEntityTypes -> unsupportedEntities += 1
@@ -176,6 +179,9 @@ class DwgLiteParser(
         private const val DwgObjectTypeCircle = 18
         private const val DwgObjectTypeLine = 19
         private const val DwgObjectTypePoint = 27
+        private const val DwgObjectType3dFace = 28
+        private const val DwgObjectTypeSolid = 31
+        private const val DwgObjectTypeTrace = 32
         private const val DwgObjectTypeMText = 44
         private const val DwgObjectTypeLwPolyline = 77
         private val DwgFixedEntityTypes = setOf(
@@ -380,6 +386,59 @@ private data class DwgObjectRecord(
         }.getOrNull()
     }
 
+    fun readSolidEntity(sourceHandle: Long): DwgLiteEntity.Polyline? {
+        return runCatching {
+            reader.readCommonEntityData()
+            reader.readBitThickness()
+            val elevation = reader.readBitDouble()
+            val first = reader.read2RawDouble(elevation)
+            val second = reader.read2RawDouble(elevation)
+            val third = reader.read2RawDouble(elevation)
+            val fourth = reader.read2RawDouble(elevation)
+            reader.readBitExtrusion()
+            DwgLiteEntity.Polyline(
+                points = listOf(first, second, third, fourth).withoutClosingDuplicate(),
+                closed = true,
+                sourceHandle = sourceHandle
+            )
+        }.getOrNull()
+    }
+
+    fun readFace3dEntity(sourceHandle: Long): DwgLiteEntity.Polyline? {
+        return runCatching {
+            reader.readCommonEntityData()
+            val hasNoFlags = reader.readBit()
+            val zValuesAreSame = reader.readBit()
+            val x1 = reader.readRawDouble()
+            val y1 = reader.readRawDouble()
+            val z1 = if (zValuesAreSame) 0.0 else reader.readRawDouble()
+
+            val x2 = reader.readBitDoubleWithDefault(x1)
+            val y2 = reader.readBitDoubleWithDefault(y1)
+            val z2 = if (zValuesAreSame) z1 else reader.readBitDoubleWithDefault(z1)
+
+            val x3 = reader.readBitDoubleWithDefault(x2)
+            val y3 = reader.readBitDoubleWithDefault(y2)
+            val z3 = if (zValuesAreSame) z1 else reader.readBitDoubleWithDefault(z2)
+
+            val x4 = reader.readBitDoubleWithDefault(x3)
+            val y4 = reader.readBitDoubleWithDefault(y3)
+            val z4 = if (zValuesAreSame) z1 else reader.readBitDoubleWithDefault(z3)
+
+            if (!hasNoFlags) reader.readBitShort()
+            DwgLiteEntity.Polyline(
+                points = listOf(
+                    DwgLitePoint(x1, y1, z1),
+                    DwgLitePoint(x2, y2, z2),
+                    DwgLitePoint(x3, y3, z3),
+                    DwgLitePoint(x4, y4, z4)
+                ).withoutClosingDuplicate(),
+                closed = true,
+                sourceHandle = sourceHandle
+            )
+        }.getOrNull()
+    }
+
     fun readPointEntity(sourceHandle: Long): DwgLiteEntity.Point? {
         return runCatching {
             reader.readCommonEntityData()
@@ -553,6 +612,7 @@ private class DwgMergedReader(
     fun readByte(): Int = main.readByte()
     fun readRawLong(): Long = main.readRawLong()
     fun readRawDouble(): Double = main.readRawDouble()
+    fun read2RawDouble(z: Double): DwgLitePoint = main.read2RawDouble(z)
     fun read3BitDouble(): DwgLitePoint = main.read3BitDouble()
     fun readBitShort(): Int = main.readBitShort()
     fun readBitLong(): Int = main.readBitLong()
@@ -755,6 +815,14 @@ private class DwgBitReader(
         return readBytes(8).toLittleEndianDouble()
     }
 
+    fun read2RawDouble(z: Double): DwgLitePoint {
+        return DwgLitePoint(
+            x = readRawDouble(),
+            y = readRawDouble(),
+            z = z
+        )
+    }
+
     fun readVariableText(): String {
         val length = readBitShort()
         if (length <= 0) return ""
@@ -863,4 +931,8 @@ private fun InputStream.readCapped(maxBytes: Int): ByteArray? {
         output.write(buffer, 0, read)
     }
     return output.toByteArray()
+}
+
+private fun List<DwgLitePoint>.withoutClosingDuplicate(): List<DwgLitePoint> {
+    return if (size > 1 && first() == last()) dropLast(1) else this
 }
