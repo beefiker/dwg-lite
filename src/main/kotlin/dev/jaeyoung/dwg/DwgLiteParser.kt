@@ -152,6 +152,7 @@ class DwgLiteParser(
                         DwgObjectTypeTrace -> record.readSolidEntity(handle)?.let(entities::add)
                         DwgObjectTypeEllipse -> record.readEllipseEntity(handle)?.let(entities::add)
                         DwgObjectTypeMText -> record.readMTextEntity(handle)?.let(entities::add)
+                        DwgObjectTypeLeader -> record.readLeaderEntity(handle)?.let(entities::add)
                         DwgObjectTypeLwPolyline -> record.readLwPolylineEntity(handle)?.let(entities::add)
                         in DwgFixedEntityTypes -> unsupportedEntities += 1
                     }
@@ -190,6 +191,7 @@ class DwgLiteParser(
         private const val DwgObjectTypeTrace = 32
         private const val DwgObjectTypeEllipse = 35
         private const val DwgObjectTypeMText = 44
+        private const val DwgObjectTypeLeader = 45
         private const val DwgObjectTypeLwPolyline = 77
         private val DwgFixedEntityTypes = setOf(
             1, 2, 3, 4, 5, 6, 7, 8,
@@ -471,6 +473,39 @@ private data class DwgObjectRecord(
         }.getOrNull()
     }
 
+    fun readLeaderEntity(sourceHandle: Long): DwgLiteEntity.Polyline? {
+        return runCatching {
+            reader.readCommonEntityData()
+            reader.readBit()
+            reader.readBitShort()
+            reader.readBitShort()
+            val pointCount = reader.readBitLong()
+            if (pointCount !in 2..MaxLeaderPointCount) return@runCatching null
+            val points = List(pointCount) { reader.read3BitDouble() }
+
+            reader.read3BitDouble()
+            reader.read3BitDouble()
+            reader.read3BitDouble()
+            reader.read3BitDouble()
+            reader.read3BitDouble()
+            reader.readBitDouble()
+            reader.readBitDouble()
+            reader.readBit()
+            reader.readBit()
+            reader.readBitShort()
+            reader.readBit()
+            reader.readBit()
+            reader.readHandle()
+            reader.readHandle()
+
+            DwgLiteEntity.Polyline(
+                points = points,
+                closed = false,
+                sourceHandle = sourceHandle
+            )
+        }.getOrNull()
+    }
+
     fun readPointEntity(sourceHandle: Long): DwgLiteEntity.Point? {
         return runCatching {
             reader.readCommonEntityData()
@@ -593,6 +628,7 @@ private data class DwgObjectRecord(
 
     companion object {
         private const val MaxLwPolylinePointCount = 100_000
+        private const val MaxLeaderPointCount = 100_000
 
         fun readAt(data: ByteArray, offset: Int, version: DwgLiteVersion): DwgObjectRecord? {
             if (offset < 0 || offset >= data.size) return null
