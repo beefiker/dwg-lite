@@ -151,6 +151,7 @@ class DwgLiteParser(
                         DwgObjectTypeSolid,
                         DwgObjectTypeTrace -> record.readSolidEntity(handle)?.let(entities::add)
                         DwgObjectTypeEllipse -> record.readEllipseEntity(handle)?.let(entities::add)
+                        DwgObjectTypeSpline -> record.readSplineEntity(handle)?.let(entities::add)
                         DwgObjectTypeMText -> record.readMTextEntity(handle)?.let(entities::add)
                         DwgObjectTypeLeader -> record.readLeaderEntity(handle)?.let(entities::add)
                         DwgObjectTypeLwPolyline -> record.readLwPolylineEntity(handle)?.let(entities::add)
@@ -190,6 +191,7 @@ class DwgLiteParser(
         private const val DwgObjectTypeSolid = 31
         private const val DwgObjectTypeTrace = 32
         private const val DwgObjectTypeEllipse = 35
+        private const val DwgObjectTypeSpline = 36
         private const val DwgObjectTypeMText = 44
         private const val DwgObjectTypeLeader = 45
         private const val DwgObjectTypeLwPolyline = 77
@@ -506,6 +508,47 @@ private data class DwgObjectRecord(
         }.getOrNull()
     }
 
+    fun readSplineEntity(sourceHandle: Long): DwgLiteEntity.Polyline? {
+        return runCatching {
+            reader.readCommonEntityData()
+            val scenario = reader.readBitLong()
+            reader.readBitLong()
+
+            var closed = false
+            val points = if (scenario == 1) {
+                reader.readBit()
+                closed = reader.readBit()
+                reader.readBit()
+                reader.readBitDouble()
+                reader.readBitDouble()
+                val knotCount = reader.readBitLong()
+                val controlPointCount = reader.readBitLong()
+                if (knotCount !in 0..MaxSplineKnotCount) return@runCatching null
+                if (controlPointCount !in 2..MaxSplinePointCount) return@runCatching null
+                val hasWeights = reader.readBit()
+                repeat(knotCount) { reader.readBitDouble() }
+                List(controlPointCount) {
+                    val point = reader.read3BitDouble()
+                    if (hasWeights) reader.readBitDouble()
+                    point
+                }
+            } else {
+                reader.readBitDouble()
+                reader.read3BitDouble()
+                reader.read3BitDouble()
+                val fitPointCount = reader.readBitLong()
+                if (fitPointCount !in 2..MaxSplinePointCount) return@runCatching null
+                List(fitPointCount) { reader.read3BitDouble() }
+            }
+
+            DwgLiteEntity.Polyline(
+                points = points.withoutClosingDuplicate(),
+                closed = closed,
+                sourceHandle = sourceHandle
+            )
+        }.getOrNull()
+    }
+
     fun readPointEntity(sourceHandle: Long): DwgLiteEntity.Point? {
         return runCatching {
             reader.readCommonEntityData()
@@ -629,6 +672,8 @@ private data class DwgObjectRecord(
     companion object {
         private const val MaxLwPolylinePointCount = 100_000
         private const val MaxLeaderPointCount = 100_000
+        private const val MaxSplinePointCount = 100_000
+        private const val MaxSplineKnotCount = 200_000
 
         fun readAt(data: ByteArray, offset: Int, version: DwgLiteVersion): DwgObjectRecord? {
             if (offset < 0 || offset >= data.size) return null

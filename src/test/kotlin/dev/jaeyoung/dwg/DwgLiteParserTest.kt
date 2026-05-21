@@ -156,6 +156,34 @@ class DwgLiteParserTest {
     }
 
     @Test
+    fun parsesAcadrustR2000SplineFixtureAsOpenControlPolyline() {
+        val result = DwgLiteParser().parse(readFixture("ac1015-spline.dwg"))
+
+        assertTrue("Expected Success but was $result", result is DwgLiteParseResult.Success)
+        val document = (result as DwgLiteParseResult.Success).document
+        assertEquals(DwgLiteVersion.AC1015, document.version)
+        assertEquals(1, document.entities.size)
+
+        val polyline = document.entities.single()
+        assertTrue(polyline is DwgLiteEntity.Polyline)
+        polyline as DwgLiteEntity.Polyline
+        assertEquals(false, polyline.closed)
+        assertEquals(4, polyline.points.size)
+        assertClose(0.0, polyline.points[0].x)
+        assertClose(0.0, polyline.points[0].y)
+        assertClose(0.0, polyline.points[0].z)
+        assertClose(5.0, polyline.points[1].x)
+        assertClose(10.0, polyline.points[1].y)
+        assertClose(0.0, polyline.points[1].z)
+        assertClose(10.0, polyline.points[2].x)
+        assertClose(0.0, polyline.points[2].y)
+        assertClose(0.0, polyline.points[2].z)
+        assertClose(15.0, polyline.points[3].x)
+        assertClose(10.0, polyline.points[3].y)
+        assertClose(0.0, polyline.points[3].z)
+    }
+
+    @Test
     fun parsesAcadrustR2000SolidFixtureAsClosedPolyline() {
         val result = DwgLiteParser().parse(readFixture("ac1015-solid.dwg"))
 
