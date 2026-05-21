@@ -11,7 +11,7 @@ dev.jaeyoung:dwg-lite
 ## Current Scope
 
 - DWG version: AC1015 / AutoCAD R2000
-- Entities: `POINT`, `LINE`, `CIRCLE`, `ARC`, `LWPOLYLINE`, `TEXT`, `MTEXT`, `SOLID`, `TRACE`, `3DFACE`
+- Entities: `POINT`, `LINE`, `CIRCLE`, `ARC`, `ELLIPSE`, `LWPOLYLINE`, `TEXT`, `MTEXT`, `SOLID`, `TRACE`, `3DFACE`
 - Output model: small Kotlin data classes for preview rendering
 - Unsupported versions/entities return structured unsupported results instead of throwing
 

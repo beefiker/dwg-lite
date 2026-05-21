@@ -3,8 +3,13 @@ package dev.jaeyoung.dwg
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
+import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.atan2
+import kotlin.math.ceil
+import kotlin.math.cos
 import kotlin.math.min
+import kotlin.math.sin
 
 enum class DwgLiteVersion(val header: String) {
     AC1012("AC1012"),
@@ -145,6 +150,7 @@ class DwgLiteParser(
                         DwgObjectType3dFace -> record.readFace3dEntity(handle)?.let(entities::add)
                         DwgObjectTypeSolid,
                         DwgObjectTypeTrace -> record.readSolidEntity(handle)?.let(entities::add)
+                        DwgObjectTypeEllipse -> record.readEllipseEntity(handle)?.let(entities::add)
                         DwgObjectTypeMText -> record.readMTextEntity(handle)?.let(entities::add)
                         DwgObjectTypeLwPolyline -> record.readLwPolylineEntity(handle)?.let(entities::add)
                         in DwgFixedEntityTypes -> unsupportedEntities += 1
@@ -182,6 +188,7 @@ class DwgLiteParser(
         private const val DwgObjectType3dFace = 28
         private const val DwgObjectTypeSolid = 31
         private const val DwgObjectTypeTrace = 32
+        private const val DwgObjectTypeEllipse = 35
         private const val DwgObjectTypeMText = 44
         private const val DwgObjectTypeLwPolyline = 77
         private val DwgFixedEntityTypes = setOf(
@@ -434,6 +441,31 @@ private data class DwgObjectRecord(
                     DwgLitePoint(x4, y4, z4)
                 ).withoutClosingDuplicate(),
                 closed = true,
+                sourceHandle = sourceHandle
+            )
+        }.getOrNull()
+    }
+
+    fun readEllipseEntity(sourceHandle: Long): DwgLiteEntity.Polyline? {
+        return runCatching {
+            reader.readCommonEntityData()
+            val center = reader.read3BitDouble()
+            val majorAxis = reader.read3BitDouble()
+            reader.read3BitDouble()
+            val minorAxisRatio = reader.readBitDouble()
+            val startParameter = reader.readBitDouble()
+            val endParameter = reader.readBitDouble()
+            val points = approximateEllipse(
+                center = center,
+                majorAxis = majorAxis,
+                minorAxisRatio = minorAxisRatio,
+                startParameter = startParameter,
+                endParameter = endParameter
+            )
+            if (points.size < 2) return@runCatching null
+            DwgLiteEntity.Polyline(
+                points = points.withoutClosingDuplicate(),
+                closed = isFullEllipseSweep(startParameter, endParameter),
                 sourceHandle = sourceHandle
             )
         }.getOrNull()
@@ -934,5 +966,41 @@ private fun InputStream.readCapped(maxBytes: Int): ByteArray? {
 }
 
 private fun List<DwgLitePoint>.withoutClosingDuplicate(): List<DwgLitePoint> {
-    return if (size > 1 && first() == last()) dropLast(1) else this
+    return if (size > 1 && first().isCloseTo(last())) dropLast(1) else this
 }
+
+private fun DwgLitePoint.isCloseTo(other: DwgLitePoint): Boolean {
+    return abs(x - other.x) <= DwgGeometryEpsilon &&
+        abs(y - other.y) <= DwgGeometryEpsilon &&
+        abs(z - other.z) <= DwgGeometryEpsilon
+}
+
+private fun approximateEllipse(
+    center: DwgLitePoint,
+    majorAxis: DwgLitePoint,
+    minorAxisRatio: Double,
+    startParameter: Double,
+    endParameter: Double
+): List<DwgLitePoint> {
+    val sweep = endParameter - startParameter
+    if (abs(sweep) <= DwgGeometryEpsilon) return emptyList()
+    val segmentCount = ceil(abs(sweep) / EllipseSegmentRadians).toInt()
+        .coerceIn(MinEllipseSegments, MaxEllipseSegments)
+    return (0..segmentCount).map { index ->
+        val parameter = startParameter + sweep * index / segmentCount
+        DwgLitePoint(
+            x = center.x + majorAxis.x * cos(parameter) - majorAxis.y * minorAxisRatio * sin(parameter),
+            y = center.y + majorAxis.y * cos(parameter) + majorAxis.x * minorAxisRatio * sin(parameter),
+            z = center.z
+        )
+    }
+}
+
+private fun isFullEllipseSweep(startParameter: Double, endParameter: Double): Boolean {
+    return abs(abs(endParameter - startParameter) - 2.0 * PI) <= DwgGeometryEpsilon
+}
+
+private const val DwgGeometryEpsilon = 1.0e-9
+private const val EllipseSegmentRadians = PI / 32.0
+private const val MinEllipseSegments = 8
+private const val MaxEllipseSegments = 64
