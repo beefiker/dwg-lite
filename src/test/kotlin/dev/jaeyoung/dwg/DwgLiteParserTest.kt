@@ -31,6 +31,23 @@ class DwgLiteParserTest {
     }
 
     @Test
+    fun parsesAcadrustR2000PointFixture() {
+        val result = DwgLiteParser().parse(readFixture("ac1015-point.dwg"))
+
+        assertTrue("Expected Success but was $result", result is DwgLiteParseResult.Success)
+        val document = (result as DwgLiteParseResult.Success).document
+        assertEquals(DwgLiteVersion.AC1015, document.version)
+        assertEquals(1, document.entities.size)
+
+        val point = document.entities.single()
+        assertTrue(point is DwgLiteEntity.Point)
+        point as DwgLiteEntity.Point
+        assertClose(50.0, point.position.x)
+        assertClose(50.0, point.position.y)
+        assertClose(0.0, point.position.z)
+    }
+
+    @Test
     fun parsesAcadrustR2000CircleFixture() {
         val result = DwgLiteParser().parse(readFixture("ac1015-circle.dwg"))
 

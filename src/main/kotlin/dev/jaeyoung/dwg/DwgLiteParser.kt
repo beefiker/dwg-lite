@@ -31,6 +31,11 @@ data class DwgLitePoint(
 sealed interface DwgLiteEntity {
     val sourceHandle: Long?
 
+    data class Point(
+        val position: DwgLitePoint,
+        override val sourceHandle: Long? = null
+    ) : DwgLiteEntity
+
     data class Line(
         val start: DwgLitePoint,
         val end: DwgLitePoint,
@@ -126,6 +131,7 @@ class DwgLiteParser(
                         DwgObjectTypeArc -> record.readArcEntity(handle)?.let(entities::add)
                         DwgObjectTypeCircle -> record.readCircleEntity(handle)?.let(entities::add)
                         DwgObjectTypeLine -> record.readLineEntity(handle)?.let(entities::add)
+                        DwgObjectTypePoint -> record.readPointEntity(handle)?.let(entities::add)
                         DwgObjectTypeLwPolyline -> record.readLwPolylineEntity(handle)?.let(entities::add)
                         in DwgFixedEntityTypes -> unsupportedEntities += 1
                     }
@@ -157,6 +163,7 @@ class DwgLiteParser(
         private const val DwgObjectTypeArc = 17
         private const val DwgObjectTypeCircle = 18
         private const val DwgObjectTypeLine = 19
+        private const val DwgObjectTypePoint = 27
         private const val DwgObjectTypeLwPolyline = 77
         private val DwgFixedEntityTypes = setOf(
             1, 2, 3, 4, 5, 6, 7, 8,
@@ -301,6 +308,20 @@ private data class DwgObjectRecord(
     val typeCode: Int,
     private val reader: DwgMergedReader
 ) {
+    fun readPointEntity(sourceHandle: Long): DwgLiteEntity.Point? {
+        return runCatching {
+            reader.readCommonEntityData()
+            val position = reader.read3BitDouble()
+            reader.readBitThickness()
+            reader.readBitExtrusion()
+            reader.readBitDouble()
+            DwgLiteEntity.Point(
+                position = position,
+                sourceHandle = sourceHandle
+            )
+        }.getOrNull()
+    }
+
     fun readCircleEntity(sourceHandle: Long): DwgLiteEntity.Circle? {
         return runCatching {
             reader.readCommonEntityData()
